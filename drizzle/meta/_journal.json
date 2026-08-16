@@ -1,5 +1,13 @@
 {
   "version": "7",
   "dialect": "mysql",
-  "entries": []
+  "entries": [
+    {
+      "idx": 0,
+      "version": "5",
+      "when": 1786905071453,
+      "tag": "0000_rainy_the_spike",
+      "breakpoints": true
+    }
+  ]
 }
