@@ -14,4 +14,5 @@
 - [x] Add responsive polished styling, refined typography, spacing, and smooth interactions
 - [x] Add Vitest coverage for core RAG and answer-grounding behavior
 - [x] Run type checks, tests, and visual verification
-- [ ] Save a final checkpoint and deliver the project version
+- [x] Save a final checkpoint and deliver the project version
+- [x] Create GitHub-ready README.md with project overview, architecture, setup, RAG flow, testing, deployment, and interview talking points
