@@ -16,3 +16,4 @@
 - [x] Run type checks, tests, and visual verification
 - [x] Save a final checkpoint and deliver the project version
 - [x] Create GitHub-ready README.md with project overview, architecture, setup, RAG flow, testing, deployment, and interview talking points
+- [x] Add the published Contexta website link to the GitHub README and synchronize the repository

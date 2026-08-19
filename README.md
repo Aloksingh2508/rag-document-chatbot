@@ -1,5 +1,7 @@
 # Contexta — PDF-Powered RAG Document Chat
 
+**Live demo:** [ragchatbot-iegvwp4w.manus.space](https://ragchatbot-iegvwp4w.manus.space)
+
 > **Ask your documents. Get answers grounded in the source.**
 
 Contexta is a polished, single-page document question-answering application built around a Retrieval-Augmented Generation (RAG) workflow. Users upload one or more PDF files, the application extracts and chunks their text with page metadata, creates in-memory embeddings, retrieves the most relevant passages for each question, and sends only that retrieved context to a language model. Every answer is accompanied by page-level source citations, while unsupported questions receive the exact response: **“I don't know based on the document.”**
