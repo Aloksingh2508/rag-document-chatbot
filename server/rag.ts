@@ -11,8 +11,8 @@ const CHUNK_OVERLAP = 100;
 const TOP_K = 4;
 const MODEL_ID = "Xenova/all-MiniLM-L6-v2";
 
-type Citation = { fileName: string; page: number };
-type SourceChunk = { id: string; text: string; page: number; fileName: string; vector: number[] };
+type Citation = { fileName: string; page?: number; timestamp?: string };
+type SourceChunk = { id: string; text: string; page?: number; timestamp?: string; fileName: string; vector: number[] };
 type DocumentIndex = { id: string; files: string[]; chunks: SourceChunk[]; createdAt: number };
 
 const indexes = new Map<string, DocumentIndex>();
@@ -41,18 +41,27 @@ async function extractPages(buffer: Buffer) {
   return pages;
 }
 
-export async function buildDocumentIndex(files: Array<{ name: string; size: number; data: string }>) {
-  if (!files.length) throw new Error("Upload at least one PDF to begin.");
+import { YoutubeTranscript } from "youtube-transcript";
+
+function formatTimestamp(ms: number) {
+  const seconds = Math.floor(ms / 1000);
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+  return [h > 0 ? h : null, m, s].filter(x => x !== null).map(x => String(x).padStart(2, "0")).join(":");
+}
+
+export async function buildCombinedIndex(files: Array<{ name: string; size: number; data: string }>, youtubeUrls: string[]) {
   const splitter = new RecursiveCharacterTextSplitter({ chunkSize: CHUNK_SIZE, chunkOverlap: CHUNK_OVERLAP });
   const chunks: SourceChunk[] = [];
-  const fileNames: string[] = [];
+  const sourceNames: string[] = [];
 
   for (const file of files) {
     if (!file.name.toLowerCase().endsWith(".pdf")) throw new Error(`${file.name} is not a PDF file.`);
     if (file.size > MAX_FILE_BYTES) throw new Error(`${file.name} exceeds the 20MB file limit.`);
     const pages = await extractPages(Buffer.from(file.data, "base64"));
     if (!pages.some(page => page.length > 0)) throw new Error(`${file.name} appears to be empty or image-only.`);
-    fileNames.push(file.name);
+    sourceNames.push(file.name);
     for (let pageIndex = 0; pageIndex < pages.length; pageIndex += 1) {
       const pageText = pages[pageIndex];
       if (!pageText) continue;
@@ -63,10 +72,46 @@ export async function buildDocumentIndex(files: Array<{ name: string; size: numb
     }
   }
 
-  if (!chunks.length) throw new Error("No readable text was found in the uploaded PDFs.");
+  for (const url of youtubeUrls) {
+    try {
+      const transcript = await YoutubeTranscript.fetchTranscript(url);
+      sourceNames.push(`YouTube: ${url}`);
+      let currentChunkText = "";
+      let startTime = transcript[0]?.offset ?? 0;
+
+      for (const entry of transcript) {
+        currentChunkText += " " + entry.text;
+        if (currentChunkText.length >= CHUNK_SIZE) {
+          chunks.push({
+            id: crypto.randomUUID(),
+            text: currentChunkText.trim(),
+            timestamp: formatTimestamp(startTime),
+            fileName: `YouTube: ${url.replace(/https?:\/\/(www\.)?/, "").slice(0, 30)}`,
+            vector: await embedText(currentChunkText),
+          });
+          currentChunkText = currentChunkText.slice(-CHUNK_OVERLAP);
+          startTime = entry.offset;
+        }
+      }
+      if (currentChunkText.trim()) {
+        chunks.push({
+          id: crypto.randomUUID(),
+          text: currentChunkText.trim(),
+          timestamp: formatTimestamp(startTime),
+          fileName: `YouTube: ${url.replace(/https?:\/\/(www\.)?/, "").slice(0, 30)}`,
+          vector: await embedText(currentChunkText),
+        });
+      }
+    } catch (err) {
+      console.error(`Failed to fetch transcript for ${url}`, err);
+      throw new Error(`Could not retrieve transcript for the YouTube video. Ensure it has captions enabled.`);
+    }
+  }
+
+  if (!chunks.length) throw new Error("No readable content was found in the provided sources.");
   const id = crypto.randomUUID();
-  indexes.set(id, { id, files: fileNames, chunks, createdAt: Date.now() });
-  return { id, files: fileNames, chunkCount: chunks.length };
+  indexes.set(id, { id, files: sourceNames, chunks, createdAt: Date.now() });
+  return { id, files: sourceNames, chunkCount: chunks.length };
 }
 
 function cosineSimilarity(a: number[], b: number[]) {
@@ -84,8 +129,11 @@ export async function answerQuestion(documentId: string, question: string, histo
   if (!query) throw new Error("Enter a question about your documents.");
 
   const matches = retrieveTopK(index.chunks, await embedText(query));
-  const context = matches.map((chunk, i) => `[Source ${i + 1} | ${chunk.fileName}, page ${chunk.page}]\n${chunk.text}`).join("\n\n");
-  const citations = Array.from(new Map(matches.map(chunk => [`${chunk.fileName}-${chunk.page}`, { fileName: chunk.fileName, page: chunk.page } as Citation])).values());
+  const context = matches.map((chunk, i) => `[Source ${i + 1} | ${chunk.fileName}${chunk.page ? `, page ${chunk.page}` : ""}${chunk.timestamp ? `, time ${chunk.timestamp}` : ""}]\n${chunk.text}`).join("\n\n");
+  const citations = Array.from(new Map(matches.map(chunk => {
+    const key = `${chunk.fileName}-${chunk.page ?? ""}-${chunk.timestamp ?? ""}`;
+    return [key, { fileName: chunk.fileName, page: chunk.page, timestamp: chunk.timestamp } as Citation];
+  })).values());
 
   try {
     const response = await invokeLLM({

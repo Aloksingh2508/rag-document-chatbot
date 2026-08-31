@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { ArrowUp, Check, FileText, Files, Loader2, MessageSquareText, Paperclip, Plus, ShieldCheck, Sparkles, UploadCloud, X } from "lucide-react";
 
 const MAX_FILE_BYTES = 20 * 1024 * 1024;
-type Citation = { fileName: string; page: number };
+type Citation = { fileName: string; page?: number; timestamp?: string };
 type ChatMessage = { role: "user" | "assistant"; content: string; citations?: Citation[] };
 
 function readAsBase64(file: File) {
@@ -17,9 +17,13 @@ function readAsBase64(file: File) {
   });
 }
 
+import { Link as LinkIcon, Youtube } from "lucide-react";
+
 export default function Home() {
   const inputRef = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<File[]>([]);
+  const [youtubeUrls, setYoutubeUrls] = useState<string[]>([]);
+  const [ytInput, setYtInput] = useState("");
   const [documentId, setDocumentId] = useState<string>();
   const [chunkCount, setChunkCount] = useState(0);
   const [question, setQuestion] = useState("");
@@ -44,17 +48,32 @@ export default function Home() {
   };
 
   const indexFiles = async () => {
-    if (!files.length) return;
+    if (!files.length && !youtubeUrls.length) return;
     try {
       const payload = await Promise.all(files.map(async file => ({ name: file.name, size: file.size, data: await readAsBase64(file) })));
-      const result = await ingest.mutateAsync({ files: payload });
+      const result = await ingest.mutateAsync({ files: payload, youtubeUrls });
       setDocumentId(result.id);
       setChunkCount(result.chunkCount);
       setMessages([]);
-      toast.success(`${result.files.length} document${result.files.length > 1 ? "s" : ""} indexed`);
+      toast.success(`${result.files.length} source${result.files.length > 1 ? "s" : ""} indexed`);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not process the documents.");
+      toast.error(error instanceof Error ? error.message : "Could not process the sources.");
     }
+  };
+
+  const addYoutubeUrl = () => {
+    const url = ytInput.trim();
+    if (!url) return;
+    if (!url.includes("youtube.com") && !url.includes("youtu.be")) {
+      toast.error("Please enter a valid YouTube URL.");
+      return;
+    }
+    if (youtubeUrls.includes(url)) {
+      toast.error("This video is already added.");
+      return;
+    }
+    setYoutubeUrls([...youtubeUrls, url]);
+    setYtInput("");
   };
 
   const submitQuestion = async (event?: React.FormEvent) => {
@@ -75,6 +94,7 @@ export default function Home() {
 
   const resetWorkspace = () => {
     setFiles([]);
+    setYoutubeUrls([]);
     setDocumentId(undefined);
     setChunkCount(0);
     setMessages([]);
@@ -103,8 +123,22 @@ export default function Home() {
             <div className="mb-4 flex items-center justify-between"><div><p className="text-sm font-semibold">Your documents</p><p className="mt-1 text-[11px] text-[#9aa3af]">PDF · up to 20MB each</p></div><Files size={18} className="text-[#8b98aa]" /></div>
             <button onClick={() => inputRef.current?.click()} onDragOver={event => { event.preventDefault(); setIsDragging(true); }} onDragLeave={() => setIsDragging(false)} onDrop={event => { event.preventDefault(); setIsDragging(false); addFiles(Array.from(event.dataTransfer.files)); }} className={`group flex min-h-[132px] w-full flex-col items-center justify-center rounded-xl border border-dashed px-4 text-center transition ${isDragging ? "border-[#5873a1] bg-[#f1f5fb]" : "border-[#cfd6df] bg-[#fbfcfd] hover:border-[#8ea2c0] hover:bg-[#f7f9fb]"}`}><span className="mb-3 flex h-9 w-9 items-center justify-center rounded-full bg-[#edf2f8] text-[#5873a1] transition group-hover:scale-105"><UploadCloud size={17} /></span><span className="text-xs font-semibold text-[#3b4654]">Drop PDFs here</span><span className="mt-1 text-[11px] text-[#a0a9b4]">or browse from your device</span></button>
             <input ref={inputRef} type="file" accept="application/pdf" multiple className="hidden" onChange={event => { addFiles(Array.from(event.target.files ?? [])); event.target.value = ""; }} />
-            {files.length > 0 && <div className="mt-4 space-y-2">{files.map(file => <div key={`${file.name}-${file.size}`} className="flex items-center gap-2 rounded-lg bg-[#f7f8fa] px-3 py-2"><FileText size={14} className="shrink-0 text-[#c45d50]" /><span className="min-w-0 flex-1 truncate text-xs font-medium text-[#4f5b6a]">{file.name}</span><span className="text-[10px] text-[#a1a9b3]">{(file.size / 1024 / 1024).toFixed(1)} MB</span><button onClick={() => setFiles(current => current.filter(item => item !== file))} className="text-[#a6afb9] hover:text-[#556170]"><X size={14} /></button></div>)}</div>}
-            <button onClick={indexFiles} disabled={!files.length || ingest.isPending} className="mt-4 flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-[#162b4d] text-xs font-semibold text-white shadow-[0_8px_18px_rgba(22,43,77,0.16)] transition hover:bg-[#203d68] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45">{ingest.isPending ? <Loader2 size={15} className="animate-spin" /> : <Check size={15} />} {ingest.isPending ? "Indexing documents…" : documentId ? "Re-index documents" : "Build document index"}</button>
+
+            <div className="mt-4">
+              <div className="flex items-center gap-2 rounded-lg border border-[#e1e5eb] bg-[#fbfcfd] p-1 pl-3 transition-within:border-[#aabbd1]">
+                <Youtube size={14} className="text-[#ff0000]" />
+                <input type="text" value={ytInput} onChange={e => setYtInput(e.target.value)} onKeyDown={e => e.key === "Enter" && addYoutubeUrl()} placeholder="Paste YouTube link..." className="flex-1 bg-transparent py-1 text-xs outline-none" />
+                <button onClick={addYoutubeUrl} className="flex h-7 w-7 items-center justify-center rounded-md bg-[#edf2f8] text-[#5873a1] hover:bg-[#e1e9f3]"><Plus size={14} /></button>
+              </div>
+            </div>
+
+            {(files.length > 0 || youtubeUrls.length > 0) && (
+              <div className="mt-4 space-y-2">
+                {files.map(file => <div key={`${file.name}-${file.size}`} className="flex items-center gap-2 rounded-lg bg-[#f7f8fa] px-3 py-2"><FileText size={14} className="shrink-0 text-[#c45d50]" /><span className="min-w-0 flex-1 truncate text-xs font-medium text-[#4f5b6a]">{file.name}</span><span className="text-[10px] text-[#a1a9b3]">{(file.size / 1024 / 1024).toFixed(1)} MB</span><button onClick={() => setFiles(current => current.filter(item => item !== file))} className="text-[#a6afb9] hover:text-[#556170]"><X size={14} /></button></div>)}
+                {youtubeUrls.map(url => <div key={url} className="flex items-center gap-2 rounded-lg bg-[#f7f8fa] px-3 py-2"><Youtube size={14} className="shrink-0 text-[#ff0000]" /><span className="min-w-0 flex-1 truncate text-xs font-medium text-[#4f5b6a]">{url.replace(/https?:\/\/(www\.)?/, "")}</span><button onClick={() => setYoutubeUrls(current => current.filter(item => item !== url))} className="text-[#a6afb9] hover:text-[#556170]"><X size={14} /></button></div>)}
+              </div>
+            )}
+            <button onClick={indexFiles} disabled={(!files.length && !youtubeUrls.length) || ingest.isPending} className="mt-4 flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-[#162b4d] text-xs font-semibold text-white shadow-[0_8px_18px_rgba(22,43,77,0.16)] transition hover:bg-[#203d68] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45">{ingest.isPending ? <Loader2 size={15} className="animate-spin" /> : <Check size={15} />} {ingest.isPending ? "Indexing sources…" : documentId ? "Re-index all sources" : "Build unified index"}</button>
           </section>
           <div className="mt-6 space-y-3 text-[11px] leading-5 text-[#8c96a3]"><div className="flex gap-2"><span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-[#8aa2c4]" />Each upload creates a fresh in-memory index.</div><div className="flex gap-2"><span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-[#8aa2c4]" />Answers are restricted to retrieved document context.</div></div>
         </aside>
@@ -119,7 +153,7 @@ export default function Home() {
                 <div className="mx-auto max-w-[720px] space-y-7">
                   {messages.map((message, index) => <div key={`${message.role}-${index}`} className={`flex gap-3 ${message.role === "user" ? "justify-end" : "justify-start"}`}>
                     {message.role === "assistant" && <div className="mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[#edf2f8] text-[#5873a1]"><Sparkles size={14} /></div>}
-                    <div className={`max-w-[88%] ${message.role === "user" ? "order-1" : ""}`}><div className={message.role === "user" ? "rounded-2xl rounded-br-md bg-[#162b4d] px-4 py-3 text-white" : "rounded-2xl rounded-bl-md bg-[#f4f6f8] px-5 py-4 text-[#334052]"}><div className="text-[13px] leading-6">{message.role === "assistant" ? <Streamdown>{message.content}</Streamdown> : message.content}</div></div>{message.role === "assistant" && <div className="mt-2 flex flex-wrap items-center gap-2 px-1 text-[10px] text-[#8b96a4]"><span className="font-semibold uppercase tracking-[0.12em]">Sources</span>{(message.citations ?? []).map(source => <span key={`${source.fileName}-${source.page}`} className="rounded-md bg-[#f0f3f6] px-2 py-1 font-medium text-[#697688]">{source.fileName} · p. {source.page}</span>)}</div>}</div>
+                    <div className={`max-w-[88%] ${message.role === "user" ? "order-1" : ""}`}><div className={message.role === "user" ? "rounded-2xl rounded-br-md bg-[#162b4d] px-4 py-3 text-white" : "rounded-2xl rounded-bl-md bg-[#f4f6f8] px-5 py-4 text-[#334052]"}><div className="text-[13px] leading-6">{message.role === "assistant" ? <Streamdown>{message.content}</Streamdown> : message.content}</div></div>{message.role === "assistant" && <div className="mt-2 flex flex-wrap items-center gap-2 px-1 text-[10px] text-[#8b96a4]"><span className="font-semibold uppercase tracking-[0.12em]">Sources</span>{(message.citations ?? []).map((source, sIdx) => <span key={`${source.fileName}-${source.page}-${source.timestamp}-${sIdx}`} className="rounded-md bg-[#f0f3f6] px-2 py-1 font-medium text-[#697688]">{source.fileName}{source.page ? ` · p. ${source.page}` : ""}{source.timestamp ? ` · ${source.timestamp}` : ""}</span>)}</div>}</div>
                   </div>)}
                   {ask.isPending && <div className="flex items-start gap-3"><div className="mt-1 flex h-7 w-7 items-center justify-center rounded-lg bg-[#edf2f8] text-[#5873a1]"><Sparkles size={14} /></div><div className="rounded-2xl rounded-bl-md bg-[#f4f6f8] px-5 py-4"><div className="flex gap-1.5"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#9eabbc]" /><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#9eabbc] [animation-delay:120ms]" /><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#9eabbc] [animation-delay:240ms]" /></div></div></div>}
                 </div>

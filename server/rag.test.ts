@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { answerQuestion, buildDocumentIndex, FALLBACK_ANSWER, MAX_FILE_BYTES, __testing } from "./rag";
+import { answerQuestion, buildCombinedIndex, FALLBACK_ANSWER, MAX_FILE_BYTES, __testing } from "./rag";
 
 describe("RAG pipeline safeguards", () => {
   it("keeps the required fallback wording exact", () => {
@@ -7,7 +7,7 @@ describe("RAG pipeline safeguards", () => {
   });
 
   it("rejects files over the 20MB limit before parsing", async () => {
-    await expect(buildDocumentIndex([{ name: "large.pdf", size: MAX_FILE_BYTES + 1, data: "" }])).rejects.toThrow("exceeds the 20MB file limit");
+    await expect(buildCombinedIndex([{ name: "large.pdf", size: MAX_FILE_BYTES + 1, data: "" }], [])).rejects.toThrow("exceeds the 20MB file limit");
   });
 
   it("rejects questions for an expired in-memory document session", async () => {
